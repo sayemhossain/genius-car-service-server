@@ -22,9 +22,9 @@ function verifyJWT(req, res, next) {
     } else {
       console.log("decoded", decoded);
       req.decoded = decoded;
+      next();
     }
   });
-  next();
 }
 
 // this is form database
