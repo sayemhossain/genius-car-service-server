@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
+const jwt = require("jsonwebtoken");
 const port = process.env.PORT || 5000;
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
@@ -8,6 +9,23 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 // middleware
 app.use(cors());
 app.use(express.json()); //if we don't use this we can't parse form body
+
+function verifyJWT(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).send({ message: "unthorized access" });
+  }
+  const token = authHeader.split(" ")[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+    if (err) {
+      return res.status(403).send({ message: "Forbidded access" });
+    } else {
+      console.log("decoded", decoded);
+      req.decoded = decoded;
+    }
+  });
+  next();
+}
 
 // this is form database
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.280fw.mongodb.net/myFirstDatabase?retryWrites=true&w=majority`;
@@ -20,10 +38,19 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
-
     const serviceCollection = client.db("geniusCar").collection("service");
     const orderCollection = client.db("geniusCar").collection("order");
 
+    // AUTH
+    app.post("/login", async (req, res) => {
+      const user = req.body;
+      const accessToken = jwt.sign(user, process.env.ACCESS_TOKEN, {
+        expiresIn: "1d",
+      });
+      res.send(accessToken);
+    });
+
+    //SERVICES API
     app.get("/service", async (req, res) => {
       const query = {};
       const cursor = serviceCollection.find(query);
@@ -54,12 +81,18 @@ async function run() {
     });
 
     //order collection api
-    app.get("/order", async (req, res) => {
+    app.get("/order", verifyJWT, async (req, res) => {
+      const decodedEmail = req.decoded.email;
       const email = req.query.email;
-      const query = { email: email };
-      const cursor = orderCollection.find(query);
-      const orders = await cursor.toArray();
-      res.send(orders);
+
+      if (email === decodedEmail) {
+        const query = { email: email };
+        const cursor = orderCollection.find(query);
+        const orders = await cursor.toArray();
+        res.send(orders);
+      } else {
+        res.status(403).send({ message: "Forbeden access" });
+      }
     });
 
     app.post("/order", async (req, res) => {
